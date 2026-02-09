@@ -4,11 +4,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Message = {
+  _id: string; // id واقعی از DB یا tempId
   from: string;
   to: string;
   text: string;
-  createdAt?: string;
+  createdAt: string;
+  tempId?: string; // فقط برای optimistic UI
+  optimistic?: boolean; // پیام هنوز تایید نشده
 };
+
 
 export default function ChatPage() {
   const [me, setMe] = useState<string | null>(null);
@@ -16,6 +20,7 @@ export default function ChatPage() {
   const [peer, setPeer] = useState<string>("");
   const [history, setHistory] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  
 
   const wsRef = useRef<WebSocket | null>(null);
   const meRef = useRef<string | null>(null);
@@ -26,6 +31,7 @@ export default function ChatPage() {
   // ---- sync refs (حل مشکل stale closure)
   useEffect(() => {
     meRef.current = me;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me]);
 
   useEffect(() => {
@@ -35,136 +41,141 @@ export default function ChatPage() {
   // ---- WebSocket: فقط یک بار
   useEffect(() => {
     // let ws: WebSocket;
-    
-    fetch("/api/socket").then(() => {
-      const ws = new WebSocket("ws://localhost:3001");
-      
-      wsRef.current = ws;
-      
-      (async () => {
-      const meRes = await fetch("/api/auth/me");
-      const { user } = await meRes.json();
-      
-      if (!user) {
-      r.push("/login");
-      return;
-      }
-      
-      setMe(user.username);
-      console.log(user.username , me);
-                ws.send(
-                  JSON.stringify({
-                    type: "register",
-                    from: user.username, // مثلاً "user1"
-                  })
-                );
-      const uRes = await fetch("/api/users");
-      const uData = await uRes.json();
-      setUsers(uData.users.filter((u: string) => u !== user.username));
-      })();
 
-      ws.onopen = () => {
-        console.log("✅ WS connected");
+    fetch("/api/auth/me")
+      .then((e) => e.json())
+      .then(async (data) => {
+        const ws = new WebSocket("ws://localhost:3001");
 
-      };
+        wsRef.current = ws;
 
-      ws.onmessage = (ev) => {
-        // console.log(ev,'ssslll')
-        const data = JSON.parse(ev.data);
-        try {
-  if (data.type === "private" || data.type === "broadcast") {
-    console.log("📩", data.from, data.text);
-  }
-          // if (data.type === "send") {
-
-          //   console.log(data.body, peerRef.current);
-
-            
-            // const m: Message = {
-            //   from: data.from,
-            //   to: data.to,
-            //   body: data.body,
-            // };
-
-            // فقط پیام‌های مربوط به چت فعال
-            // if (data.from === peerRef.current || data.to === peerRef.current) {
-            //   setHistory((h) => [...h, m]);
-            // }
-          // }
-        } catch (err) {
-          console.error("❌ WS message parse error", err);
+        const { user } = data;
+        if (!user) {
+          r.push("/login");
+          return;
         }
-      };
+        setMe(user.username);
+        const username = data.user.username;
 
-      ws.onclose = () => {
-        console.log("⚠️ WS closed");
-      };
+        ws.onopen = () => {
+          console.log("✅ WS connected");
+          (async () => {
+            if (!user) {
+              r.push("/login");
+              return;
+            }
 
-      ws.onerror = (err) => {
-        console.error("❌ WS error", err);
+            console.log(username, me);
+            ws.send(
+              JSON.stringify({
+                type: "register",
+                from: username, // مثلاً "user1"
+              }),
+            );
+            const uRes = await fetch("/api/users");
+            const uData = await uRes.json();
+            console.log(uData.users)
+            setUsers(uData.users.filter((u: string) => u !== username));
+          })();
+        };
+
+wsRef.current!.onmessage = (e: MessageEvent) => {
+  try {
+    const data: {
+      type: "message:ack" | "message";
+      message: {
+        _id: string;
+        from: string;
+        to: string;
+        text: string;
+        createdAt: string;
+        tempId?: string;
+        optimistic?: boolean;
       };
-    });
+    } = JSON.parse(e.data);
+
+    if (data.type === "message:ack") {
+      const realMsg = data.message;
+
+      setHistory((h) => h.map((m) => (m._id === realMsg.tempId ? realMsg : m)));
+    }
+
+    if (data.type === "message") {
+      setHistory((h) => [...h, data.message]);
+    }
+  } catch (err) {
+    console.error("WS message parse error:", err);
+  }
+};
+
+
+        ws.onclose = () => {
+          console.log("⚠️ WS closed");
+        };
+
+        ws.onerror = (err) => {
+          console.error("❌ WS error", err);
+        };
+      });
 
     return () => {
       wsRef.current?.close();
       wsRef.current = null;
     };
-  }, []); // ✅ مهم: بدون dependency
-
-  // ---- گرفتن اطلاعات کاربر و کاربران
-  // useEffect(() => {
-  //   (async () => {
-  //     const meRes = await fetch("/api/auth/me");
-  //     const { user } = await meRes.json();
-
-  //     if (!user) {
-  //       r.push("/login");
-  //       return;
-  //     }
-
-  //     setMe(user.username);
-
-  //     const uRes = await fetch("/api/users");
-  //     const uData = await uRes.json();
-  //     setUsers(uData.users.filter((u: string) => u !== user.username));
-  //   })();
-  // }, [r]);
+  }, []);
 
   // ---- انتخاب مخاطب
-  async function pickPeer(u: string) {
-    setPeer(u);
+async function pickPeer(u: string) {
+  setPeer(u);
 
-    const res = await fetch(
-      `/api/messages/history?with=${encodeURIComponent(u)}`
-    );
-    const data = await res.json();
-    setHistory(data.messages);
+  const res = await fetch(
+    `/api/messages/history?with=${encodeURIComponent(u)}`,
+  );
+  const data = await res.json();
+
+  if (data.error) {
+    console.warn("User not found or error:", data.error);
+    setHistory([]); // clear previous messages
+    return;
   }
+
+  setHistory(data.messages);
+}
+
 
   // ---- ارسال پیام
   function send() {
     if (!peer || !input.trim()) return;
 
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({
-          type: "private",
-          from:me,
-          to: peer,
-          text: input,
-        })
-      );
-
-      // optimistic UI
-      setHistory((h) => [
-        ...h,
-        { from: meRef.current!, to: peer, text: input },
-      ]);
-
-      setInput("");
-    } else {
+    if (wsRef.current?.readyState !== WebSocket.OPEN) {
       console.error("❌ WebSocket not open");
+      return;
     }
+
+    const text = input;
+    setInput("");
+
+    // optimistic UI
+    const optimisticMsg = {
+      _id: crypto.randomUUID(),
+      from: meRef.current!,
+      to: peer,
+      text,
+      createdAt: new Date().toISOString(),
+      optimistic: true,
+    };
+
+    setHistory((h) => [...h, optimisticMsg]);
+
+    wsRef.current.send(
+      JSON.stringify({
+        type: "private",
+        from: meRef.current, // userId یا username (باید با بک‌اند یکی باشه)
+        to: peer,
+        text,
+        tempId: optimisticMsg._id, // 👈 خیلی مهم
+      }),
+    );
   }
 
   async function logout() {
@@ -174,7 +185,7 @@ export default function ChatPage() {
 
   const title = useMemo(
     () => (peer ? `چت با ${peer}` : "یک مخاطب انتخاب کن"),
-    [peer]
+    [peer],
   );
 
   return (

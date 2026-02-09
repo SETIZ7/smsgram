@@ -1,8 +1,6 @@
 // src/app/layout.tsx
 import type { Metadata } from "next";
-// اگه globals.css رو توی src/styles گذاشتی، اینو بذار:
 import "../styles/globals.css";
-// اگه globals.css کنار همین فایل (داخل app) هست:  import "./globals.css"
 
 export const metadata: Metadata = {
   title: "smsgram",

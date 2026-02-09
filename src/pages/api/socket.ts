@@ -4,7 +4,6 @@ import type { NextApiRequest, NextApiResponse } from "next";
 export const config = { api: { bodyParser: false } };
 
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
-  console.log('fff')
   // @ts-expect-error -- library typing is wrong
   if (!res.socket.server.wss) {
     console.log("🔌 Starting WS...");
