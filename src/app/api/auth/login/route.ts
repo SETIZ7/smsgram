@@ -10,7 +10,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Bad input" }, { status: 400 });
 
   const db = await getDb();
-  const user = await db.collection("users").findOne({ _id: username });
+  const user = await db.collection("users").findOne({ username: username });
   if (!user) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const ok = await verifyPassword(password, user.passhash);

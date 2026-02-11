@@ -4,7 +4,7 @@ import { getUserBySessionCookie } from "@/lib/auth";
 import { ObjectId } from "mongodb";
     
     interface UserDoc {
-      _id: string;
+      username: string;
       passhash: string;
       // [key: string]: any;
     }
@@ -28,15 +28,15 @@ export async function GET(req: Request) {
 
     const withUserDoc = await db
       .collection<UserDoc>("users")
-      .findOne({ _id: withUserParam });
+      .findOne({ username: withUserParam });
 
     // 1️⃣ پیدا کردن user مقصد
 
     if (!withUserDoc)
       return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-    const meId = session.user._id;
-    const withUserId = withUserDoc._id;
+    const meId = session.user.username;
+    const withUserId = withUserDoc.username;
 
     // 2️⃣ گرفتن پیام‌ها
     const msgs = await db

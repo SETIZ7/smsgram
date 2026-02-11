@@ -10,7 +10,7 @@ export async function GET(req: Request) {
   const db = await getDb();
   const users = await db
     .collection("users")
-    .find({}, { projection: { _id: 1 } })
+    .find({}, { projection: { username: 1 } })
     .toArray();
-  return NextResponse.json({ users: users.map((u) => u._id) });
+  return NextResponse.json({ users: users.map((u) => u.username) });
 }

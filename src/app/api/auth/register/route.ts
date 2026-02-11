@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
 import { hashPassword } from "@/lib/crypto";
+// import { v4 as uuidv4 } from "uuid";
 
 export async function POST(req: Request) {
   const { username, password } = await req.json();
@@ -8,14 +9,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Bad input" }, { status: 400 });
 
   const db = await getDb();
-  const exist = await db.collection("users").findOne({ _id: username });
+  const exist = await db.collection("users").findOne({ username: username });
   if (exist)
     return NextResponse.json({ error: "Username exists" }, { status: 409 });
 
   const passhash = await hashPassword(password);
   await db
     .collection("users")
-    .insertOne({ _id: username, passhash, createdAt: new Date() });
+    .insertOne({
+      // id: uuidv4(),
+      username: username,
+      passhash,
+      createdAt: new Date(),
+    });
 
   return NextResponse.json({ ok: true });
 }

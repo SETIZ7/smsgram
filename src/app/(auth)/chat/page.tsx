@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { v4 as uuidv4 } from "uuid";
+import initNotifications from "@/lib/models/initNotifications/route.ts";
 
 type Message = {
   _id: string; // id واقعی از DB یا tempId
@@ -39,90 +41,107 @@ export default function ChatPage() {
   }, [peer]);
 
   // ---- WebSocket: فقط یک بار
-  useEffect(() => {
-    // let ws: WebSocket;
+useEffect(() => {
+   initNotifications();
+  fetch("/api/auth/me")
+    .then((e) => e.json())
+    .then((data) => {
+      const protocol = location.protocol === "https:" ? "wss" : "ws";
+      const wsUrl = `${protocol}://${location.hostname}:3001`;
 
-    fetch("/api/auth/me")
-      .then((e) => e.json())
-      .then(async (data) => {
-        const ws = new WebSocket("ws://localhost:3001");
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
 
-        wsRef.current = ws;
+      const { user } = data;
+      if (!user) {
+        r.push("/login");
+        return;
+      }
+      setMe(user.username);
+      const username = data.user.username;
 
-        const { user } = data;
-        if (!user) {
-          r.push("/login");
-          return;
-        }
-        setMe(user.username);
-        const username = data.user.username;
+      ws.onopen = () => {
+        console.log("✅ WS connected");
+        (async () => {
+          if (!user) {
+            r.push("/login");
+            return;
+          }
 
-        ws.onopen = () => {
-          console.log("✅ WS connected");
-          (async () => {
-            if (!user) {
-              r.push("/login");
-              return;
-            }
-
-            console.log(username, me);
-            ws.send(
-              JSON.stringify({
-                type: "register",
-                from: username, // مثلاً "user1"
-              }),
-            );
-            const uRes = await fetch("/api/users");
-            const uData = await uRes.json();
-            console.log(uData.users)
-            setUsers(uData.users.filter((u: string) => u !== username));
-          })();
-        };
-
-wsRef.current!.onmessage = (e: MessageEvent) => {
-  try {
-    const data: {
-      type: "message:ack" | "message";
-      message: {
-        _id: string;
-        from: string;
-        to: string;
-        text: string;
-        createdAt: string;
-        tempId?: string;
-        optimistic?: boolean;
+          // console.log(username, me);
+          ws.send(
+            JSON.stringify({
+              type: "register",
+              from: username, // مثلاً "user1"
+            }),
+          );
+          const uRes = await fetch("/api/users");
+          const uData = await uRes.json();
+          setUsers(uData.users.filter((u: string) => u !== username));
+        })();
       };
-    } = JSON.parse(e.data);
 
-    if (data.type === "message:ack") {
-      const realMsg = data.message;
+      wsRef.current!.onmessage = (e: MessageEvent) => {
+        console.log(e.data,"salam1");
+        try {
+          const data: {
+            type: "message:ack" | "message";
+            message: {
+              _id: string;
+              from: string;
+              to: string;
+              text: string;
+              createdAt: string;
+              tempId?: string;
+              optimistic?: boolean;
+            };
+          } = JSON.parse(e.data);
 
-      setHistory((h) => h.map((m) => (m._id === realMsg.tempId ? realMsg : m)));
-    }
+          if (data.type === "message:ack") {
+            const realMsg = data.message;
 
-    if (data.type === "message") {
-      setHistory((h) => [...h, data.message]);
-    }
-  } catch (err) {
-    console.error("WS message parse error:", err);
-  }
-};
+            setHistory((h) =>
+              h.map((m) => (m._id === realMsg.tempId ? realMsg : m)),
+            );
+          }
 
+          if (data.type === "message") {
+            console.log("salam3");
+            if (data.message.from === peerRef.current) {
+              setHistory((h) => [...h, data.message]);
+              console.log(data, "salam2");
+            } else {
+              initNotifications();
+              if (
+                "Notification" in window &&
+                Notification.permission === "granted" &&
+                document.visibilityState !== "visible"
+              ) {
+                new Notification(`پیام جدید از ${data.message.from}`, {
+                  body: data.message.text,
+                });
+              }
+            }
+          }
+        } catch (err) {
+          console.error("WS message parse error:", err);
+        }
+      };
 
-        ws.onclose = () => {
-          console.log("⚠️ WS closed");
-        };
+      ws.onclose = () => {
+        console.log("⚠️ WS closed");
+      };
 
-        ws.onerror = (err) => {
-          console.error("❌ WS error", err);
-        };
-      });
+      ws.onerror = (err) => {
+        console.error("❌ WS error", err);
+      };
+    });
 
-    return () => {
-      wsRef.current?.close();
-      wsRef.current = null;
-    };
-  }, []);
+  return () => {
+    wsRef.current?.close();
+    wsRef.current = null;
+  };
+}, []);
 
   // ---- انتخاب مخاطب
 async function pickPeer(u: string) {
@@ -157,7 +176,7 @@ async function pickPeer(u: string) {
 
     // optimistic UI
     const optimisticMsg = {
-      _id: crypto.randomUUID(),
+      _id: uuidv4(),
       from: meRef.current!,
       to: peer,
       text,
@@ -230,7 +249,7 @@ async function pickPeer(u: string) {
             <div
               key={i}
               className={`max-w-[70%] p-2 rounded ${
-                m.from === me ? "ml-auto bg-black text-white" : "bg-gray-100"
+                m.from === me ? "ml-auto bg-gray-500 text-black" : "bg-gray-300"
               }`}
             >
               <div className="text-xs opacity-60">{m.from}</div>

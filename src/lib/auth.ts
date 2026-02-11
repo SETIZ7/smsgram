@@ -1,11 +1,12 @@
-import { randomUUID } from "crypto";
+import { v4 as uuidv4 } from "uuid";
 import { getDb } from "./mongodb";
 
 const COOKIE = process.env.SESSION_COOKIE_NAME!;
 
 export async function createSession(userId: string) {
   const db = await getDb();
-  const token = randomUUID();
+  const token = uuidv4();
+
   await db.collection("sessions").insertOne({
     token,
     userId,
@@ -24,7 +25,7 @@ export async function getUserBySessionCookie(cookieHeader?: string | null) {
   const db = await getDb();
   const session = await db.collection("sessions").findOne({ token });
   if (!session) return null;
-  const user = await db.collection("users").findOne({ _id: session.userId });
+  const user = await db.collection("users").findOne({ username: session.userId });
   if (!user) return null;
   return { user, token };
 }
