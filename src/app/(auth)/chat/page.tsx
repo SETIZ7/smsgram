@@ -16,6 +16,8 @@ type Message = {
 };
 
 
+
+
 export default function ChatPage() {
   const [me, setMe] = useState<string | null>(null);
   const [users, setUsers] = useState<string[]>([]);
@@ -27,8 +29,49 @@ export default function ChatPage() {
   const wsRef = useRef<WebSocket | null>(null);
   const meRef = useRef<string | null>(null);
   const peerRef = useRef<string>("");
+  const parentHistoryRef = useRef<HTMLDivElement | null>(null);
+  const inputMessageRef = useRef<HTMLInputElement | null>(null);
+  const scrollPositions = useRef<Record<string, number>>({});
+const [conversId, setconversId] = useState<string | null>(null);
 
   const r = useRouter();
+
+
+  
+ function scrooldown() {
+   parentHistoryRef.current?.scroll({
+     top: parentHistoryRef.current.scrollHeight,
+     behavior: "smooth",
+   });
+ } 
+
+  // useEffect(() => {
+
+  // }, [history]);
+
+  useEffect(() => {
+    return () => {
+      const el = parentHistoryRef.current;
+      if (!el || !conversId) return;
+
+      scrollPositions.current[conversId] = el.scrollTop;
+    };
+  }, [conversId]);
+
+useEffect(() => {
+  const el = parentHistoryRef.current;
+  if (!el || !conversId) return;
+
+  const saved = scrollPositions.current[conversId];
+
+  if (saved !== undefined) {
+    el.scrollTop = saved;
+  } else {
+    el.scrollTop = el.scrollHeight;
+  }
+}, [conversId]);
+
+
 
   // ---- sync refs (حل مشکل stale closure)
   useEffect(() => {
@@ -38,6 +81,12 @@ export default function ChatPage() {
 
   useEffect(() => {
     peerRef.current = peer;
+        setTimeout(() => {
+             parentHistoryRef.current?.scroll({
+               top: parentHistoryRef.current.scrollHeight,
+               behavior: "instant",
+             });
+        }, 10);
   }, [peer]);
 
   // ---- WebSocket: فقط یک بار
@@ -91,6 +140,7 @@ useEffect(() => {
               from: string;
               to: string;
               text: string;
+              conversId: string;
               createdAt: string;
               tempId?: string;
               optimistic?: boolean;
@@ -106,10 +156,8 @@ useEffect(() => {
           }
 
           if (data.type === "message") {
-            console.log("salam3");
             if (data.message.from === peerRef.current) {
               setHistory((h) => [...h, data.message]);
-              console.log(data, "salam2");
             } else {
               initNotifications();
               if (
@@ -145,8 +193,9 @@ useEffect(() => {
 
   // ---- انتخاب مخاطب
 async function pickPeer(u: string) {
+  inputMessageRef.current?.focus();
   setPeer(u);
-
+  setconversId(u)
   const res = await fetch(
     `/api/messages/history?with=${encodeURIComponent(u)}`,
   );
@@ -163,7 +212,8 @@ async function pickPeer(u: string) {
 
 
   // ---- ارسال پیام
-  function send() {
+ async function send() {
+
     if (!peer || !input.trim()) return;
 
     if (wsRef.current?.readyState !== WebSocket.OPEN) {
@@ -173,6 +223,10 @@ async function pickPeer(u: string) {
 
     const text = input;
     setInput("");
+
+    setTimeout(() => {
+      scrooldown();
+    }, 10);
 
     // optimistic UI
     const optimisticMsg = {
@@ -186,15 +240,36 @@ async function pickPeer(u: string) {
 
     setHistory((h) => [...h, optimisticMsg]);
 
+  // const conversId =  await getOrCreatePrivateConversation(meRef.current!,peer)
+
+ const convId = await fetch("/api/Conversation", {
+   method: "POST",
+   body: JSON.stringify({ userA: meRef.current!, userB: peer }),
+ }).then((e) => e.json());
+
+
+ console.log(convId);
+
     wsRef.current.send(
       JSON.stringify({
-        type: "private",
+        type: "private_message",
         from: meRef.current, // userId یا username (باید با بک‌اند یکی باشه)
         to: peer,
+        conversId:convId._id,
         text,
         tempId: optimisticMsg._id, // 👈 خیلی مهم
       }),
     );
+
+    // wsRef.current.send(
+    //   JSON.stringify({
+    //     type: "private",
+    //     from: meRef.current, // userId یا username (باید با بک‌اند یکی باشه)
+    //     to: peer,
+    //     text,
+    //     tempId: optimisticMsg._id, // 👈 خیلی مهم
+    //   }),
+    // );
   }
 
   async function logout() {
@@ -235,7 +310,7 @@ async function pickPeer(u: string) {
 
           {users.length === 0 && (
             <div className="text-xs text-gray-400">
-              فعلاً کاربر دیگری نیست. یک مرورگر دیگر باز کن و ثبت‌نام کن.
+             لطفا دکمه جست و جو را برای چت با یک کاربر بفشارید!
             </div>
           )}
         </div>
@@ -244,7 +319,12 @@ async function pickPeer(u: string) {
       <main className="flex-1 flex flex-col">
         <header className="border-b p-3 font-medium">{title}</header>
 
-        <div className="flex-1 p-3 overflow-y-auto space-y-2">
+        <div
+          key={peer}
+          id="parentHistoryId"
+          ref={parentHistoryRef}
+          className="flex-1 p-3 overflow-y-auto space-y-2 relative"
+        >
           {history.map((m, i) => (
             <div
               key={i}
@@ -260,10 +340,14 @@ async function pickPeer(u: string) {
           {!peer && (
             <div className="text-gray-400">از ستون چپ یک مخاطب انتخاب کن.</div>
           )}
+
+          <div className="fixed left-[3vw] bottom-[6vw] rounded-full p-2 bg-amber-100 text-[2vw] cursor-pointer" onClick={()=>scrooldown()}> ⬇️ </div>
+
         </div>
 
         <div className="border-t p-3 flex gap-2">
           <input
+            ref={inputMessageRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && send()}
