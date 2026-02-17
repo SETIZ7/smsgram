@@ -27,25 +27,24 @@ export async function GET(req: Request) {
 
 
     const withUserDoc = await db
-      .collection<UserDoc>("users")
-      .findOne({ username: withUserParam });
+      .collection<UserDoc>("conversations")
+      .findOne({ _id: new ObjectId(withUserParam) });
 
     // 1️⃣ پیدا کردن user مقصد
 
     if (!withUserDoc)
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "conversations not found" },
+        { status: 404 },
+      );
 
-    const meId = session.user.username;
-    const withUserId = withUserDoc.username;
+    // const meId = session.user.username;
+    const withUserId = withUserDoc._id
 
     // 2️⃣ گرفتن پیام‌ها
     const msgs = await db
       .collection("messages")
-      .find({
-        $or: [
-          { from: meId, to: withUserId },
-          { from: withUserId, to: meId },
-        ],
+      .find({conversId: withUserId
       })
       .sort({ createdAt: 1 })
       .toArray();

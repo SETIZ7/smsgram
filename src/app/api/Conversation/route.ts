@@ -19,6 +19,7 @@ import { getDb } from "@/lib/mongodb";
   if (!conv) {
     const res = await db.collection("conversations").insertOne({
       type: "private",
+      name: "",
       members,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -40,4 +41,24 @@ export async function POST(req: Request) {
   const conv = await getOrCreatePrivateConversation(userA, userB);
 
   return NextResponse.json(conv);
+}
+
+
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const userId = searchParams.get("userId");
+
+  if (!userId) {
+    return NextResponse.json({ error: "userId is required" }, { status: 400 });
+  }
+
+  const db = await getDb();
+
+  const conversations = await db
+    .collection("conversations")
+    .find({ members: userId })
+    .sort({ updatedAt: -1 })
+    .toArray();
+
+  return NextResponse.json(conversations);
 }

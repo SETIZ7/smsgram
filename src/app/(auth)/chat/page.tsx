@@ -24,15 +24,20 @@ export default function ChatPage() {
   const [peer, setPeer] = useState<string>("");
   const [history, setHistory] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const [conversId, setconversId] = useState<{id:string,name:string} | null>(null);
+  const [Allconver, setAllConver] = useState<{_id:string, type: string; members :string[]}[]>([]);
   
 
   const wsRef = useRef<WebSocket | null>(null);
   const meRef = useRef<string | null>(null);
   const peerRef = useRef<string>("");
+  const conversIdRef = useRef<{id:string,name:string} | null>(null);
+  const AllconverRef = useRef<
+    { _id: string; type: string; members: string[] }[]
+  >([]);
   const parentHistoryRef = useRef<HTMLDivElement | null>(null);
   const inputMessageRef = useRef<HTMLInputElement | null>(null);
   const scrollPositions = useRef<Record<string, number>>({});
-const [conversId, setconversId] = useState<string | null>(null);
 
   const r = useRouter();
 
@@ -49,34 +54,38 @@ const [conversId, setconversId] = useState<string | null>(null);
 
   // }, [history]);
 
-  useEffect(() => {
-    return () => {
-      const el = parentHistoryRef.current;
-      if (!el || !conversId) return;
-
-      scrollPositions.current[conversId] = el.scrollTop;
-    };
-  }, [conversId]);
 
 useEffect(() => {
   const el = parentHistoryRef.current;
   if (!el || !conversId) return;
 
-  const saved = scrollPositions.current[conversId];
+  const saved = scrollPositions.current[conversId.id];
 
   if (saved !== undefined) {
     el.scrollTop = saved;
   } else {
     el.scrollTop = el.scrollHeight;
   }
+      return () => {
+        const el = parentHistoryRef.current;
+        if (!el || !conversId) return;
+
+        scrollPositions.current[conversId.id] = el.scrollTop;
+      };
 }, [conversId]);
 
 
+useEffect(() => {
+    conversIdRef.current = conversId!;
+}, [conversId]);
+
+useEffect(() => {
+  AllconverRef.current = Allconver;
+}, [Allconver]);
 
   // ---- sync refs (حل مشکل stale closure)
   useEffect(() => {
     meRef.current = me;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me]);
 
   useEffect(() => {
@@ -117,6 +126,13 @@ useEffect(() => {
             return;
           }
 
+          const userNameRes = await fetch(
+            `/api/Conversation?userId=${username}`,
+          );
+          const userNameData = await userNameRes.json();
+
+          setAllConver(userNameData);
+          console.log(userNameData);
           // console.log(username, me);
           ws.send(
             JSON.stringify({
@@ -131,10 +147,9 @@ useEffect(() => {
       };
 
       wsRef.current!.onmessage = (e: MessageEvent) => {
-        console.log(e.data,"salam1");
         try {
           const data: {
-            type: "message:ack" | "message";
+            type: "message:ack" | "message" ;
             message: {
               _id: string;
               from: string;
@@ -147,6 +162,10 @@ useEffect(() => {
             };
           } = JSON.parse(e.data);
 
+          // data.message.from
+          console.log(AllconverRef, data);
+
+
           if (data.type === "message:ack") {
             const realMsg = data.message;
 
@@ -156,19 +175,13 @@ useEffect(() => {
           }
 
           if (data.type === "message") {
+
+            // AllconverRef.current.find((e)=>{
+            //   return e.members
+            // })
+            //  setAllConver([...AllconverRef.current]);
             if (data.message.from === peerRef.current) {
               setHistory((h) => [...h, data.message]);
-            } else {
-              initNotifications();
-              if (
-                "Notification" in window &&
-                Notification.permission === "granted" &&
-                document.visibilityState !== "visible"
-              ) {
-                new Notification(`پیام جدید از ${data.message.from}`, {
-                  body: data.message.text,
-                });
-              }
             }
           }
         } catch (err) {
@@ -195,7 +208,7 @@ useEffect(() => {
 async function pickPeer(u: string) {
   inputMessageRef.current?.focus();
   setPeer(u);
-  setconversId(u)
+  // setconversId(u)
   const res = await fetch(
     `/api/messages/history?with=${encodeURIComponent(u)}`,
   );
@@ -210,11 +223,31 @@ async function pickPeer(u: string) {
   setHistory(data.messages);
 }
 
+  // ---- انتخاب مکالمه
+async function pickConv(id: string, name: string) {
+  inputMessageRef.current?.focus();
+  setPeer(name);
+  setconversId({id,name});
+  const res = await fetch(
+    `/api/messages/history?with=${encodeURIComponent(id)}`,
+  );
+  const data = await res.json();
+
+  if (data.error) {
+    console.warn("User not found or error:", data.error);
+    setHistory([]); // clear previous messages
+    return;
+  }
+
+  setHistory(data.messages);
+}
+
+
 
   // ---- ارسال پیام
  async function send() {
 
-    if (!peer || !input.trim()) return;
+    if (!conversId || !input.trim()) return;
 
     if (wsRef.current?.readyState !== WebSocket.OPEN) {
       console.error("❌ WebSocket not open");
@@ -232,7 +265,7 @@ async function pickPeer(u: string) {
     const optimisticMsg = {
       _id: uuidv4(),
       from: meRef.current!,
-      to: peer,
+      to: conversId.name,
       text,
       createdAt: new Date().toISOString(),
       optimistic: true,
@@ -292,28 +325,59 @@ async function pickPeer(u: string) {
           </button>
         </div>
 
-        <div className="text-sm text-gray-500">کاربران</div>
-
-        <div className="space-y-1">
-          {users.map((u) => (
-            <button
-              key={u}
-              onClick={() => pickPeer(u)}
-              className={
-                "w-full text-left p-2 rounded " +
-                (peer === u ? "bg-black text-white" : "hover:bg-gray-100")
-              }
-            >
-              {u}
-            </button>
-          ))}
-
-          {users.length === 0 && (
-            <div className="text-xs text-gray-400">
-             لطفا دکمه جست و جو را برای چت با یک کاربر بفشارید!
-            </div>
-          )}
+        <div className="text-sm text-gray-500">
+          {" "}
+          {users.length} کاربران تعداد{" "}
         </div>
+        <div className="flex">
+          <div className="space-y-1">
+            {users.map((u) => (
+              <button
+                key={u}
+                onClick={() => pickPeer(u)}
+                className={
+                  "w-full text-left p-2 rounded " +
+                  (peer === u ? "bg-black text-white" : "hover:bg-gray-100")
+                }
+              >
+                {u}
+              </button>
+            ))}
+          </div>
+
+          <div className="space-y-1">
+            {[...Allconver]
+              .filter((u) => u.type === "private")
+              .map((u) => (
+                <button
+                  key={u._id}
+                  onClick={() => {
+                    // const otherUser = u.members.find((mem) => mem !== me);
+                    // if (otherUser)
+                    pickConv(
+                      u._id,
+                      u.members.find((mem) => mem !== me) || "Unknown",
+                    );
+                    console.log(Allconver, u);
+                  }}
+                  className={
+                    "w-full text-left p-2 rounded " +
+                    (conversIdRef.current?.id === u._id
+                      ? "bg-black text-white"
+                      : "hover:bg-gray-100")
+                  }
+                >
+                  {u.members.find((mem) => mem !== me) || "Unknown"}
+                </button>
+              ))}
+          </div>
+        </div>
+
+        {users.length === 0 && (
+          <div className="text-xs text-gray-400">
+            لطفا دکمه جست و جو را برای چت با یک کاربر بفشارید!
+          </div>
+        )}
       </aside>
 
       <main className="flex-1 flex flex-col">
@@ -341,8 +405,13 @@ async function pickPeer(u: string) {
             <div className="text-gray-400">از ستون چپ یک مخاطب انتخاب کن.</div>
           )}
 
-          <div className="fixed left-[3vw] bottom-[6vw] rounded-full p-2 bg-amber-100 text-[2vw] cursor-pointer" onClick={()=>scrooldown()}> ⬇️ </div>
-
+          <div
+            className="fixed left-[3vw] bottom-[6vw] rounded-full p-2 bg-amber-100 text-[2vw] cursor-pointer"
+            onClick={() => scrooldown()}
+          >
+            {" "}
+            ⬇️{" "}
+          </div>
         </div>
 
         <div className="border-t p-3 flex gap-2">
@@ -351,14 +420,18 @@ async function pickPeer(u: string) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && send()}
-            placeholder={peer ? `پیام به ${peer}...` : "اول مخاطب را انتخاب کن"}
-            disabled={!peer}
+            placeholder={
+              conversId?.name
+                ? `پیام به ${conversId.name}...`
+                : "اول مخاطب را انتخاب کن"
+            }
+            disabled={!conversId?.id}
             className="flex-1 border rounded p-2"
           />
 
           <button
             onClick={send}
-            disabled={!peer || !input.trim()}
+            disabled={!conversId?.id || !input.trim()}
             className="px-4 rounded bg-black text-white disabled:opacity-40"
           >
             ارسال
