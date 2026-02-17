@@ -25,6 +25,16 @@ export async function GET(req: Request) {
 
     const db = await getDb();
 
+const isObjectId =
+  typeof withUserParam === "string" &&
+  /^[a-f\d]{24}$/i.test(withUserParam);
+
+    if(!isObjectId) {
+      return NextResponse.json(
+        { error: "Invalid ObjectId format" },
+        { status: 400 },
+      );
+    }
 
     const withUserDoc = await db
       .collection<UserDoc>("conversations")

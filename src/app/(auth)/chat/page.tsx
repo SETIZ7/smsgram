@@ -98,6 +98,16 @@ useEffect(() => {
         }, 10);
   }, [peer]);
 
+  
+          async function fetchUserConversations(username: string) {
+            const userNameRes = await fetch(
+              `/api/Conversation?userId=${username}`,
+            );
+            const userNameData = await userNameRes.json();
+
+            setAllConver(userNameData);
+            // console.log(userNameData);
+          }
   // ---- WebSocket: فقط یک بار
 useEffect(() => {
    initNotifications();
@@ -105,7 +115,7 @@ useEffect(() => {
     .then((e) => e.json())
     .then((data) => {
       const protocol = location.protocol === "https:" ? "wss" : "ws";
-      const wsUrl = `${protocol}://${location.hostname}:3001`;
+      const wsUrl = `${protocol}://${location.hostname}:3001?token=${data.user.username}`;
 
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
@@ -126,13 +136,8 @@ useEffect(() => {
             return;
           }
 
-          const userNameRes = await fetch(
-            `/api/Conversation?userId=${username}`,
-          );
-          const userNameData = await userNameRes.json();
+          fetchUserConversations(username);
 
-          setAllConver(userNameData);
-          console.log(userNameData);
           // console.log(username, me);
           ws.send(
             JSON.stringify({
@@ -176,9 +181,26 @@ useEffect(() => {
 
           if (data.type === "message") {
 
-            // AllconverRef.current.find((e)=>{
-            //   return e.members
-            // })
+
+const existsAllconverRef = AllconverRef.current.some(
+  (e) => e._id === data.message.conversId,
+);
+            if (!existsAllconverRef) {
+              fetchUserConversations(meRef.current!);
+            }
+            else{
+
+              const index = AllconverRef.current.findIndex(
+                (e) => e._id === data.message.conversId,
+              );
+
+              if (index > -1) {
+                const [item] = AllconverRef.current.splice(index, 1);
+                AllconverRef.current.unshift(item);
+                setAllConver([...AllconverRef.current]);
+              }
+            }
+
             //  setAllConver([...AllconverRef.current]);
             if (data.message.from === peerRef.current) {
               setHistory((h) => [...h, data.message]);
@@ -208,19 +230,19 @@ useEffect(() => {
 async function pickPeer(u: string) {
   inputMessageRef.current?.focus();
   setPeer(u);
-  // setconversId(u)
-  const res = await fetch(
-    `/api/messages/history?with=${encodeURIComponent(u)}`,
-  );
-  const data = await res.json();
+  setconversId({id:u,name:u});
+  // const res = await fetch(
+  //   `/api/messages/history?with=${encodeURIComponent(u)}`,
+  // );
+  // const data = await res.json();
 
-  if (data.error) {
-    console.warn("User not found or error:", data.error);
-    setHistory([]); // clear previous messages
-    return;
-  }
+  // if (data.error) {
+  //   console.warn("User not found or error:", data.error);
+  //   setHistory([]); // clear previous messages
+  //   return;
+  // }
 
-  setHistory(data.messages);
+  // setHistory(data.messages);
 }
 
   // ---- انتخاب مکالمه
@@ -281,7 +303,7 @@ async function pickConv(id: string, name: string) {
  }).then((e) => e.json());
 
 
- console.log(convId);
+ console.log(convId, "ddd", peer);
 
     wsRef.current.send(
       JSON.stringify({
